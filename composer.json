@@ -19,6 +19,11 @@
     "netflex/api": "^2.0",
     "netflex/foundation": "^2.0"
   },
+  "autoload": {
+    "psr-4": {
+      "Netflex\\Notifications\\": "src/"
+    }
+  },
   "extra": {
     "laravel": {
       "providers": [
