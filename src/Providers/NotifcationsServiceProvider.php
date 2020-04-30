@@ -11,7 +11,7 @@ class NotifcationsServiceProvider extends ServiceProvider
   {
     if ($this->app->has('mail.manager')) {
       $this->app->make('mail.manager')
-        ->extend('notifications', function () {
+        ->extend('netflex', function () {
           return new NotificationsTransport;
         });
     }
