@@ -2,6 +2,7 @@
 
 namespace Netflex\Notifications\Transport;
 
+use Swift_Attachment;
 use Swift_Mime_SimpleMessage;
 
 use Netflex\API\Facades\API;
@@ -17,13 +18,24 @@ class NotificationsTransport extends Transport
   {
     $this->beforeSendPerformed($message);
 
+    $attachments = [];
+
+    foreach ($message->getChildren() as $child) {
+      if ($child instanceof Swift_Attachment) {
+        $attachments[] = [
+          'filename' => $child->getFilename(),
+          'link' => 'data://' . $child->getContentType() . ';base64,' . base64_encode($child->getBody())
+        ];
+      }
+    }
+
     $response = API::post('relations/notifications', [
       'subject' => $message->getSubject(),
       'to' => $this->getTo($message),
       'from' => $this->getFrom($message),
       'body' => base64_encode($message->getBody()),
       'use_blank_template' => true,
-      'attachments' => []
+      'attachments' => $attachments
     ]);
 
     $message->getHeaders()->addTextHeader('X-Notification-ID', $response->notification_id);
