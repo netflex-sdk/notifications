@@ -6,7 +6,7 @@ In `config/mail.php`:
 
 ```php
 [
-  'driver' => env('MAIL_DRIVER', 'notifications')
+  'driver' => env('MAIL_DRIVER', 'netflex')
 ]
 ```
 
