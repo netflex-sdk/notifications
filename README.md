@@ -1,5 +1,11 @@
 # Netflex Notifications Mail Driver for Laravel MailManager
 
+## Installation
+
+```bash
+composer require netflex/notifications
+```
+
 ## Setup
 
 In `config/mail.php`:
