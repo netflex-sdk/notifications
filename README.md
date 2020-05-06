@@ -19,6 +19,7 @@ In `config/mail.php`:
 ## Usage
 
 You can use this driver to send any [Mailables](https://laravel.com/docs/7.x/mail#writing-mailables).
+It also integrates with Laravels [Notification](https://laravel.com/docs/7.x/notifications) system (and adds a 'sms' channel, just implement toSMS on your notification).
 
 ```php
 <?php
