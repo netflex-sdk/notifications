@@ -56,8 +56,7 @@ class Notification extends Mailable
   public function build(...$args)
   {
     return $this->html(
-      with(new Mustache_Engine(['entitiy_flags' => ENT_QUOTES]))
-        ->render($this->template->body, $this->viewData)
+        mustache($this->template->body, $this->viewData)
     );
   }
 }
