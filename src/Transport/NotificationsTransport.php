@@ -72,8 +72,8 @@ class NotificationsTransport extends Transport
       ->slice(0, 1)
       ->map(function ($display, $address) {
         return [
-          'mail' => Variable::get('mail_sender_mail') ?? $address,
-          'name' => Variable::get('mail_sender_name') ?? $display
+          'mail' => $address ?? Variable::get('mail_sender_mail'),
+          'name' => $display ?? Variable::get('mail_sender_name')
         ];
       })->first();
 
