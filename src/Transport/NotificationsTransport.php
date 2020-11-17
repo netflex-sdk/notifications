@@ -43,6 +43,7 @@ class NotificationsTransport extends Transport
       'subject' => $message->getSubject(),
       'to' => $this->getTo($message),
       'from' => $this->getFrom($message),
+      'reply_to' => $replyTo,
       'body' => base64_encode($message->getBody()),
       'use_blank_template' => true,
       'attachments' => $attachments
