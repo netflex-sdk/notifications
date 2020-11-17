@@ -7,6 +7,7 @@ use Swift_Mime_SimpleMessage;
 
 use Netflex\API\Facades\API;
 use Netflex\Foundation\Variable;
+
 use Illuminate\Mail\Transport\Transport;
 
 class NotificationsTransport extends Transport
@@ -20,26 +21,34 @@ class NotificationsTransport extends Transport
 
     $replyTo = null;
     
-    $replyToArray = $message->getReplyTo();
-    if ($replyToArray) {
-        $address = array_key_first($replyToArray);
-        $name = $replyToArray[$address];
+    /** @var array|string|null */
+    $replyToHeader = $message->getReplyTo();
 
-        $replyTo = $name ? "{$name} <{$address}>" : $address;
+    if (is_array($replyToHeader)) {
+      $address = array_key_first($replyToHeader);
+      $name = $replyToHeader[$address];
+
+      $replyTo = $name ? "{$name} <{$address}>" : $address;      
+    }
+    
+    if (is_string($replyToHeader)) {
+      $replyTo = $replyToHeader;
     }
 
-    $attachments = [];
-
-    foreach ($message->getChildren() as $child) {
-      if ($child instanceof Swift_Attachment) {
-        $attachments[] = [
-          'filename' => $child->getFilename(),
-          'link' => 'data://' . $child->getContentType() . ';base64,' . base64_encode($child->getBody())
+    $attachments = collect($message->getChildren())
+      ->filter(function ($child) {
+        return $child instanceof Swift_Attachment;
+      })
+      ->map(function (Swift_Attachment $attachment) {
+        return [
+          'filename' => $attachment->getFilename(),
+          'link' => 'data://' . $attachment->getContentType() . ';base64,' . base64_encode($attachment->getBody())
         ];
-      }
-    }
+      })
+      ->values()
+      ->toArray();
 
-    $response = API::post('relations/notifications', [
+    $response = API::post('relations/notifications', array_filter([
       'subject' => $message->getSubject(),
       'to' => $this->getTo($message),
       'from' => $this->getFrom($message),
@@ -47,7 +56,7 @@ class NotificationsTransport extends Transport
       'body' => base64_encode($message->getBody()),
       'use_blank_template' => true,
       'attachments' => $attachments
-    ]);
+    ]));
 
     $message->getHeaders()->addTextHeader('X-Notification-ID', $response->notification_id);
 
