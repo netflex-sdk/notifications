@@ -18,6 +18,16 @@ class NotificationsTransport extends Transport
   {
     $this->beforeSendPerformed($message);
 
+    $replyTo = null;
+    
+    $replyToArray = $message->getReplyTo();
+    if ($replyToArray) {
+        $address = array_key_first($replyToArray);
+        $name = $replyToArray[$address];
+
+        $replyTo = $name ? "{$name} <{$address}>" : $address;
+    }
+
     $attachments = [];
 
     foreach ($message->getChildren() as $child) {
