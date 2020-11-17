@@ -7,6 +7,7 @@ use Swift_Mime_SimpleMessage;
 
 use Netflex\API\Facades\API;
 use Netflex\Foundation\Variable;
+
 use Illuminate\Mail\Transport\Transport;
 
 class NotificationsTransport extends Transport
@@ -18,25 +19,44 @@ class NotificationsTransport extends Transport
   {
     $this->beforeSendPerformed($message);
 
-    $attachments = [];
+    $replyTo = null;
+    
+    /** @var array|string|null */
+    $replyToHeader = $message->getReplyTo();
 
-    foreach ($message->getChildren() as $child) {
-      if ($child instanceof Swift_Attachment) {
-        $attachments[] = [
-          'filename' => $child->getFilename(),
-          'link' => 'data://' . $child->getContentType() . ';base64,' . base64_encode($child->getBody())
-        ];
-      }
+    if (is_array($replyToHeader)) {
+      $address = array_key_first($replyToHeader);
+      $name = $replyToHeader[$address];
+
+      $replyTo = $name ? "{$name} <{$address}>" : $address;      
+    }
+    
+    if (is_string($replyToHeader)) {
+      $replyTo = $replyToHeader;
     }
 
-    $response = API::post('relations/notifications', [
+    $attachments = collect($message->getChildren())
+      ->filter(function ($child) {
+        return $child instanceof Swift_Attachment;
+      })
+      ->map(function (Swift_Attachment $attachment) {
+        return [
+          'filename' => $attachment->getFilename(),
+          'link' => 'data://' . $attachment->getContentType() . ';base64,' . base64_encode($attachment->getBody())
+        ];
+      })
+      ->values()
+      ->toArray();
+
+    $response = API::post('relations/notifications', array_filter([
       'subject' => $message->getSubject(),
       'to' => $this->getTo($message),
       'from' => $this->getFrom($message),
+      'reply_to' => $replyTo,
       'body' => base64_encode($message->getBody()),
       'use_blank_template' => true,
       'attachments' => $attachments
-    ]);
+    ]));
 
     $message->getHeaders()->addTextHeader('X-Notification-ID', $response->notification_id);
 
