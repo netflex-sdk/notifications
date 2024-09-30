@@ -51,7 +51,7 @@ class AutomationEmail extends QueryableModel
             if ($user instanceof Customer) {
                 $userId = $user->id;
             } else {
-                $user = Customer::resolve($user);
+                $user = Customer::firstOrCreate(['mail' => $user]);
                 $userId = $user->id;
             }
         }
