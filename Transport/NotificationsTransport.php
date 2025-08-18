@@ -2,87 +2,134 @@
 
 namespace Netflex\Notifications\Transport;
 
+use Exception;
+use ReflectionClass;
+
+use Swift_Attachment;
+use Swift_Mime_SimpleMessage;
+use Swift_ByteStream_FileByteStream;
+
 use Netflex\API\Facades\API;
 use Netflex\Foundation\Variable;
-use Symfony\Component\Mailer\SentMessage;
-use Symfony\Component\Mailer\Transport\AbstractTransport;
-use Symfony\Component\Mime\Address;
-use Symfony\Component\Mime\MessageConverter;
-use Symfony\Component\Mime\Part\DataPart;
 
-class NotificationsTransport extends AbstractTransport
+use Illuminate\Mail\Transport\Transport;
+use Illuminate\Support\Str;
+
+class NotificationsTransport extends Transport
 {
-  protected function doSend(SentMessage $message): void
+  /**
+   * {@inheritdoc}
+   */
+  public function send(Swift_Mime_SimpleMessage $message, &$failedRecipients = null)
   {
-    $email = MessageConverter::toEmail($message->getOriginalMessage());
+    $this->beforeSendPerformed($message);
 
     $replyTo = null;
-    $replyToAddresses = $email->getReplyTo();
-    if (!empty($replyToAddresses)) {
-      $addr = $replyToAddresses[0];
-      $replyTo = $addr->getName()
-        ? sprintf('%s <%s>', $addr->getName(), $addr->getAddress())
-        : $addr->getAddress();
+
+    /** @var array|string|null */
+    $replyToHeader = $message->getReplyTo();
+
+    if (is_array($replyToHeader)) {
+      $address = array_key_first($replyToHeader);
+      $name = $replyToHeader[$address];
+
+      $replyTo = $name ? "{$name} <{$address}>" : $address;
     }
 
-    $attachments = [];
-    foreach ($email->getAttachments() as $part) {
-      if (!$part instanceof DataPart) {
-        continue;
-      }
-
-      $filename = $part->getFilename() ?? 'attachment';
-      $contentType = $part->getMediaType() . '/' . $part->getMediaSubtype();
-
-      $binary = $part->getBody();
-      $link = 'data://' . $contentType . ';base64,' . base64_encode($binary);
-
-      $attachments[] = [
-        'filename' => $filename,
-        'link' => $link,
-      ];
+    if (is_string($replyToHeader)) {
+      $replyTo = $replyToHeader;
     }
 
-    $body = $email->getHtmlBody() ?? $email->getTextBody() ?? '';
+    $attachments = collect($message->getChildren())
+      ->filter(function ($child) {
+        return $child instanceof Swift_Attachment;
+      })
+      ->map(function (Swift_Attachment $attachment) {
+        $filename = $attachment->getFilename();
+        $contentType = $attachment->getContentType();
+        $content = null;
 
-    $payload = array_filter([
-      'subject' => $email->getSubject(),
-      'to' => $this->mapTo($email->getTo()),
-      'from' => $this->mapFrom($email->getFrom()),
-      'reply_to' => $replyTo,
-      'body' => base64_encode($body),
-      'use_blank_template' => true,
-      'attachments' => $attachments,
-    ], static fn ($v) => $v !== null && $v !== []);
+        try {
+          $reflectionClass = (new ReflectionClass($attachment))->getParentClass()->getParentClass();
+          $reflectionProperty = $reflectionClass->getProperty('body');
+          $reflectionProperty->setAccessible(true);
 
-    $response = API::post('relations/notifications', $payload);
+          /** @var Swift_ByteStream_FileByteStream $body */
+          $path = $reflectionProperty->getValue($attachment)->getPath();
 
-    $email->getHeaders()->addTextHeader('X-Notification-ID', (string) data_get($response, 'notification_id'));
-  }
+          if (Str::startsWith($path, ['http://', 'https://'])) {
+            $content = $path;
+          } else {
+            $content = 'data://' . $contentType . ';base64,' . base64_encode(file_get_contents($path));
+          }
+        } catch (Exception $e) {
+          $content = 'data://' . $contentType . ';base64,' . base64_encode($attachment->getBody());
+        }
 
-  public function __toString(): string
-  {
-    return 'netflex-notifications';
-  }
-
-  /** @param Address[] $addresses */
-  protected function mapTo(array $addresses): array
-  {
-    return collect($addresses)
-      ->map(fn (Address $a) => ['mail' => $a->getAddress(), 'name' => $a->getName()])
+        return [
+          'filename' => $filename,
+          'link' => $content
+        ];
+      })
       ->values()
-      ->all();
+      ->toArray();
+
+    $response = API::post('relations/notifications', array_filter([
+      'subject' => $message->getSubject(),
+      'to' => $this->getTo($message),
+      'from' => $this->getFrom($message),
+      'reply_to' => $replyTo,
+      'body' => base64_encode($message->getBody()),
+      'use_blank_template' => true,
+      'attachments' => $attachments
+    ]));
+
+    $message->getHeaders()->addTextHeader('X-Notification-ID', $response->notification_id);
+
+    $this->sendPerformed($message);
+
+    return $this->numberOfRecipients($message);
   }
 
-  /** @param Address[] $addresses */
-  protected function mapFrom(array $addresses): array
+  /**
+   * @param Swift_Mime_SimpleMessage $message
+   * @return array
+   */
+  public function getTo(Swift_Mime_SimpleMessage $message)
   {
-    /** @var Address|null $first */
-    $first = $addresses[0] ?? null;
+    $recipients = $message->getTo();
+    return collect($recipients)
+      ->map(function ($display, $address) {
+        return [
+          'mail' => $address,
+          'name' => $display
+        ];
+      })->values()
+      ->toArray();
+  }
+
+  /**
+   * @param Swift_Mime_SimpleMessage $message
+   * @return array
+   */
+  public function getFrom(Swift_Mime_SimpleMessage $message)
+  {
+    $from = collect($message->getFrom())
+      ->slice(0, 1)
+      ->map(function ($display, $address) {
+        return [
+          'mail' => $address ?? Variable::get('mail_sender_mail'),
+          'name' => $display ?? Variable::get('mail_sender_name')
+        ];
+      })->first();
+
+    if ($from) {
+      return $from;
+    }
 
     return [
-      'mail' => $first?->getAddress() ?? (string) Variable::get('mail_sender_mail'),
-      'name' => $first?->getName() ?? (string) Variable::get('mail_sender_name'),
+      'mail' => Variable::get('mail_sender_mail'),
+      'name' => Variable::get('mail_sender_name')
     ];
   }
 }
