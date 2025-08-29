@@ -6,6 +6,11 @@ use Netflex\Customers\Customer;
 use Illuminate\Notifications\Notifiable;
 use ReflectionClass;
 
+/**
+ * @property-read string $email
+ * @property-read string $phone
+ * @property-read string $phone_countrycode
+ */
 final class AnonymousUser extends Customer
 {
     use Notifiable;
